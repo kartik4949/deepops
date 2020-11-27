@@ -155,6 +155,4 @@ class Tensor(GPUConnectMixin):
         return self.add(tensor)
 
     def __repr__(self):
-        return (
-            f"dp.Tensor shape=self.shape, numpy=({self.data}, dtype={self.data.dtype})"
-        )
+        return f"dp.Tensor shape={self.shape}, numpy=({self.data}, dtype={self.data.dtype})"
