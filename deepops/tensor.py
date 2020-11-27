@@ -121,6 +121,7 @@ class Tensor(GPUConnectMixin):
         self.device_name = name
         self.device_data = self._alloc_devic_memory(self.data)
         self._memory_host_to_device(self.device_data, self.data)
+        return self
 
     def add(self, tensor):
         """add.
