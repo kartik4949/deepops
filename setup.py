@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="deepops",
+    name="deepop",
     version="0.1dev1",
     author="Kartik Sharma",
     author_email="kartik4949@gmail.com",
