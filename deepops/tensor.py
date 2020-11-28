@@ -1,4 +1,6 @@
 """Tensor Class."""
+import functools
+
 import numpy as np
 
 # PyCUDA initialization
@@ -6,7 +8,7 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
 
-from .gpu_kernels import add
+from .gpu_kernels import add, arithmetic
 from .states import TensorState
 
 
@@ -151,8 +153,39 @@ class Tensor(GPUConnectMixin):
         cuda.Context.synchronize()
         return _host_out_arry
 
+    def mul(self, tensor):
+        """add.
+        Vector Multiply which adds Tensor with given Tensor.
+
+        Args:
+            tensor: Tensor class
+        """
+        assert isinstance(
+            tensor, self.__class__
+        ), f"Tensor is required but passed {type(tensor)}"
+        out_data = self._alloc_devic_memory(self.data)
+        N = max(self.data.shape)
+        blockDim = (self.BLOCKSIZE, 1, 1)
+        gridDim = (self._idiv(N, self.BLOCKSIZE), 1, 1)
+        _vec_add_kernel = self.get_kernel(arithmetic("*"), "device_arithmetic")
+        _vec_add_kernel(
+            out_data,
+            self.device_data,
+            tensor.device_data,
+            np.int32(N),
+            block=blockDim,
+            grid=gridDim,
+        )
+        _host_out_arry = np.empty_like(self.data)
+        cuda.memcpy_dtoh(_host_out_arry, out_data)
+        cuda.Context.synchronize()
+        return _host_out_arry
+
     def __add__(self, tensor):
         return self.add(tensor)
+
+    def __mul__(self, tensor):
+        return self.mul(tensor)
 
     def __repr__(self):
         return f"dp.Tensor shape={self.shape}, numpy=({self.data}, dtype={self.data.dtype})"

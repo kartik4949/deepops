@@ -62,6 +62,15 @@ class TestOps(unittest.TestCase):
             dp.Tensor.add,
         )
 
+    def testMul(self):
+        np_mul = lambda a, b: a * b
+        _helper_test(
+            [(1, 1000000), (1, 1000000)],
+            [(-1, 1), (-1, 1)],
+            np_mul,
+            dp.Tensor.mul,
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

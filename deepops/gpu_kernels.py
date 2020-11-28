@@ -1,7 +1,7 @@
 """Cuda Kernels """
 from pycuda.compiler import SourceModule
 
-__all__ = ["add"]
+__all__ = ["add", "transpose", "mul"]
 
 
 class Kernel:
@@ -17,6 +17,20 @@ class Kernel:
           """
         )
         return add
+
+    def arithmetic_kernel(self, operator):
+        operation = SourceModule(
+            """
+          __global__ void device_arithmetic(float * __restrict__ d_c, const float * __restrict__ d_a, const float * __restrict__ d_b, const int N)
+          {
+            const int tid = threadIdx.x + blockIdx.x * blockDim.x;
+            if (tid >= N) return;
+            d_c[tid] = d_a[tid] %s d_b[tid];
+          }
+          """
+            % operator
+        )
+        return operation
 
     def multiply_kernel(self):
         mul = SourceModule(
@@ -86,3 +100,6 @@ class Kernel:
 
 kernel = Kernel()
 add = kernel.addition_kernel()
+mul = kernel.multiply_kernel()
+transpose = None  # kernel.transpose_kernel()
+arithmetic = kernel.arithmetic_kernel
