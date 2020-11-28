@@ -65,7 +65,7 @@ class Tensor(GPUConnectMixin):
     It involves the usage of __slots__ to tell Python not to use a dict,
     and only allocate space for a fixed set of attributes.
     """
-    __slots__ = ("data", "gpu", "state", "device_name")
+    __slots__ = ("_data", "_dtype", "_shape", "gpu", "state", "device_name")
 
     def __init__(self, data):
         """__init__.
@@ -75,6 +75,7 @@ class Tensor(GPUConnectMixin):
             data: list or np.array data.
             gpu: use gpu?
         ::
+
         Example:
 
         >> a = Tensor([1, 2])
@@ -90,7 +91,9 @@ class Tensor(GPUConnectMixin):
         assert (
             data.dtype == np.float32
         ), "Only single precision is supported i.e float32"
-        self.data = data
+        self._data = data
+        self._dtype = data.dtype
+        self._shape = data.shape
         self.gpu = False
         self.state = TensorState.HOST
         self.device_name = "cpu:0"
@@ -101,15 +104,30 @@ class Tensor(GPUConnectMixin):
         """
         self.state = TensorState.DETACH
         # TODO(kartik4949) : Write ME.
-        return Tensor(self.data, gpu=False)
+        return Tensor(self.data)
 
     @property
     def shape(self):
-        return self.data.shape
+        return self._shape
+
+    @property
+    def data(self):
+        return self._data
 
     @property
     def dtype(self):
-        return self.data.dtype
+        return self._dtype
+
+    def asarray(self, data: list = None, dtype: tuple = None):
+        """asarray.
+        convert array to DP array.
+
+        Args:
+            data (list): data
+            dtype (tuple): dtype
+        """
+        # Depracted!
+        return Tensor(np.asarray(data, dtype=dtype))
 
     def device(self, name: str = None):
         """device.
