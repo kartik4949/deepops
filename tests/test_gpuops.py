@@ -78,7 +78,7 @@ class TestTensorPrint(unittest.TestCase):
         a = np.asarray(np.random.uniform(0, 1, size=[1, 10000]), dtype=np.float32)
         dp_a = dp.Tensor(a)
         repr_a = dp_a.__repr__()
-        shape = re.search("shape=\((.*?)\)", repr_a).groups()[0]
+        shape = re.search("shape: \((.*?)\)", repr_a).groups()[0]
         self.assertEqual("(" + shape + ")", str(a.shape))
 
 

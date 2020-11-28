@@ -67,7 +67,7 @@ class Tensor(GPUConnectMixin):
     """
     __slots__ = ("_data", "_dtype", "_shape", "gpu", "state", "device_name")
 
-    def __init__(self, data):
+    def __init__(self, data, dtype=None):
         """__init__.
         Initializes Tensor Class.
 
@@ -84,13 +84,9 @@ class Tensor(GPUConnectMixin):
         (dp.Tensor, shape=(2,), dtype = int32, numpy:([3,5], dtype = int32)
         """
         if isinstance(data, list):
-            data = np.array(data, dtype=np.float32)
+            data = np.array(data, dtype=dtype if dtype else np.float32)
         assert isinstance(data, np.ndarray), f"numpy excepted but {type(data)} passed."
 
-        # set precision to float32.
-        assert (
-            data.dtype == np.float32
-        ), "Only single precision is supported i.e float32"
         self._data = data
         self._dtype = data.dtype
         self._shape = data.shape
@@ -118,6 +114,18 @@ class Tensor(GPUConnectMixin):
     def dtype(self):
         return self._dtype
 
+    @property
+    def where(self):
+        return self._device()
+
+    def _device(self):
+        if self.state == TensorState.DEVICE:
+            _cuda_device = "gpu"
+
+        if self.state == TensorState.HOST:
+            _cuda_device = "cpu"
+        return _cuda_device
+
     def asarray(self, data: list = None, dtype: tuple = None):
         """asarray.
         convert array to DP array.
@@ -137,6 +145,10 @@ class Tensor(GPUConnectMixin):
             name (str): name of device
         """
         assert name.startswith("cpu") or name.startswith("gpu"), "Wrong Device!!"
+        # set precision to float32.
+        assert (
+            self.dtype == np.float32
+        ), "Only single precision is supported i.e float32"
         self.state = TensorState.DEVICE
         self.device_name = name
         self.device_data = self._alloc_devic_memory(self.data)
@@ -150,6 +162,8 @@ class Tensor(GPUConnectMixin):
         Args:
             tensor: Tensor class
         """
+        if self.state != TensorState.DEVICE:
+            return self.data + tensor.data
         assert isinstance(
             tensor, self.__class__
         ), f"Tensor is required but passed {type(tensor)}"
@@ -178,6 +192,8 @@ class Tensor(GPUConnectMixin):
         Args:
             tensor: Tensor class
         """
+        if self.state != TensorState.DEVICE:
+            return self.data * tensor.data
         assert isinstance(
             tensor, self.__class__
         ), f"Tensor is required but passed {type(tensor)}"
@@ -206,4 +222,9 @@ class Tensor(GPUConnectMixin):
         return self.mul(tensor)
 
     def __repr__(self):
-        return f"dp.Tensor shape={self.shape}, numpy=({self.data}, dtype={self.data.dtype})"
+        return "dp.Tensor shape: %s, numpy: (%s, dtype=%s), cuda device: %s " % (
+            self.shape,
+            self.data,
+            self.dtype,
+            self.where,
+        )
