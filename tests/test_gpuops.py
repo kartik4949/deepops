@@ -1,4 +1,5 @@
 import unittest
+import re
 import functools
 import logging
 import timeit
@@ -54,7 +55,7 @@ class TestDeviceTransfers(unittest.TestCase):
 
 
 class TestOps(unittest.TestCase):
-    def testAdd(self):
+    def test_add(self):
         _helper_test(
             [(1, 1000000), (1, 1000000)],
             [(-1, 1), (-1, 1)],
@@ -62,7 +63,7 @@ class TestOps(unittest.TestCase):
             dp.Tensor.add,
         )
 
-    def testMul(self):
+    def test_mul(self):
         np_mul = lambda a, b: a * b
         _helper_test(
             [(1, 1000000), (1, 1000000)],
@@ -70,6 +71,15 @@ class TestOps(unittest.TestCase):
             np_mul,
             dp.Tensor.mul,
         )
+
+
+class TestTensorPrint(unittest.TestCase):
+    def test_repr(self):
+        a = np.asarray(np.random.uniform(0, 1, size=[1, 10000]), dtype=np.float32)
+        dp_a = dp.Tensor(a)
+        repr_a = dp_a.__repr__()
+        shape = re.search("shape=\((.*?)\)", repr_a).groups()[0]
+        self.assertEqual("(" + shape + ")", str(a.shape))
 
 
 if __name__ == "__main__":
