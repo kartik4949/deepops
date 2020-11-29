@@ -316,7 +316,8 @@ class Tensor(GPUConnectMixin, GradientMixin):
         return self.sub(tensor)
 
     def __repr__(self):
-        return "dp.Tensor shape: %s, numpy: (%s, dtype=%s), cuda device: %s " % (
+        return "dp.Tensor %s shape: %s, numpy: (%s, dtype=%s), cuda device: %s" % (
+            f"name: {self.name}, " if self.name else "",
             self.shape,
             self.data,
             self.dtype,
