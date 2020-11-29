@@ -167,6 +167,9 @@ class Tensor(GPUConnectMixin):
     def cpu(
         self,
     ):
+        """cpu.
+        copy buffer from device to cpu.
+        """
         _host_out_arry = np.empty(self.shape, dtype=np.float32)
         cuda.memcpy_dtoh(_host_out_arry, self._data)
         cuda.Context.synchronize()
