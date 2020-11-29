@@ -15,14 +15,17 @@ from .states import TensorState
 class GPUConnectMixin:
     """Mixin for GPU connect"""
 
-    def _alloc_devic_memory(self, data):
-        """_alloc_devic_memory.
+    def _alloc_device_memory(self, shape):
+        """_alloc_device_memory.
         Allocate memory  to device.
 
         Args:
             data:
         """
-        _device_data = cuda.mem_alloc(data.nbytes)
+        _nbytes = np.prod(shape) * 4
+        _device_data = cuda.mem_alloc(int(_nbytes))
+        _device_data.shape = tuple(shape)
+        _device_data.dtype = np.float32
         return _device_data
 
     def _memory_host_to_device(self, device_data, data):
@@ -83,15 +86,17 @@ class Tensor(GPUConnectMixin):
         >> print(a + b)
         (dp.Tensor, shape=(2,), dtype = int32, numpy:([3,5], dtype = int32)
         """
+        self.state = TensorState.HOST
         if isinstance(data, list):
             data = np.array(data, dtype=dtype if dtype else np.float32)
-        assert isinstance(data, np.ndarray), f"numpy excepted but {type(data)} passed."
-
+        elif isinstance(data, pycuda._driver.DeviceAllocation):
+            self.state = TensorState.DEVICE
+        elif not isinstance(data, np.ndarray):
+            raise TypeError(f"numpy excepted but {type(data)} passed.")
         self._data = data
         self._dtype = data.dtype
         self._shape = data.shape
         self.gpu = False
-        self.state = TensorState.HOST
         self.device_name = "cpu:0"
 
     def detach(self):
@@ -149,11 +154,23 @@ class Tensor(GPUConnectMixin):
         assert (
             self.dtype == np.float32
         ), "Only single precision is supported i.e float32"
-        self.state = TensorState.DEVICE
-        self.device_name = name
-        self.device_data = self._alloc_devic_memory(self.data)
-        self._memory_host_to_device(self.device_data, self.data)
+        if self.state != TensorState.DEVICE:
+            self.state = TensorState.DEVICE
+            self.device_name = name
+            data = self._alloc_device_memory(self.shape)
+            self._memory_host_to_device(data, self.data)
+            self._shape = self.data.shape
+            self._dtype = self.data.dtype
+            self._data = data
         return self
+
+    def cpu(
+        self,
+    ):
+        _host_out_arry = np.empty(self.shape, dtype=np.float32)
+        cuda.memcpy_dtoh(_host_out_arry, self._data)
+        cuda.Context.synchronize()
+        return Tensor(_host_out_arry)
 
     def add(self, tensor):
         """add.
@@ -162,32 +179,29 @@ class Tensor(GPUConnectMixin):
         Args:
             tensor: Tensor class
         """
-        if self.state != TensorState.DEVICE:
-            return self.data + tensor.data
-        assert isinstance(
-            tensor, self.__class__
-        ), f"Tensor is required but passed {type(tensor)}"
-        out_data = self._alloc_devic_memory(self.data)
-        N = max(self.data.shape)
-        blockDim = (self.BLOCKSIZE, 1, 1)
-        gridDim = (self._idiv(N, self.BLOCKSIZE), 1, 1)
-        _vec_add_kernel = self.get_kernel(add, "device_vec_add")
-        _vec_add_kernel(
-            out_data,
-            self.device_data,
-            tensor.device_data,
-            np.int32(N),
-            block=blockDim,
-            grid=gridDim,
-        )
-        _host_out_arry = np.empty_like(self.data)
-        cuda.memcpy_dtoh(_host_out_arry, out_data)
-        cuda.Context.synchronize()
-        return _host_out_arry
+        return self.arithmetic(tensor, "+")
+
+    def sub(self, tensor):
+        """sub.
+        Vector Addition which substracts Tensor with given Tensor.
+
+        Args:
+            tensor: Tensor class
+        """
+        return self.arithmetic(tensor, "-")
 
     def mul(self, tensor):
-        """add.
-        Vector Multiply which adds Tensor with given Tensor.
+        """mul.
+        Vector Addition which multiplies Tensor with given Tensor.
+
+        Args:
+            tensor: Tensor class
+        """
+        return self.arithmetic(tensor, "*")
+
+    def arithmetic(self, tensor, operation: str = "+"):
+        """Arithmetic.
+        Vector arithmetic operations on given Tensor.
 
         Args:
             tensor: Tensor class
@@ -197,29 +211,33 @@ class Tensor(GPUConnectMixin):
         assert isinstance(
             tensor, self.__class__
         ), f"Tensor is required but passed {type(tensor)}"
-        out_data = self._alloc_devic_memory(self.data)
-        N = max(self.data.shape)
+        ret = self._alloc_device_memory(self.shape)
+        N = max(self.shape)
         blockDim = (self.BLOCKSIZE, 1, 1)
         gridDim = (self._idiv(N, self.BLOCKSIZE), 1, 1)
-        _vec_add_kernel = self.get_kernel(arithmetic("*"), "device_arithmetic")
-        _vec_add_kernel(
-            out_data,
-            self.device_data,
-            tensor.device_data,
+        _vec_kernel = self.get_kernel(arithmetic(operation), "device_arithmetic")
+        _vec_kernel(
+            ret,
+            self.data,
+            tensor.data,
             np.int32(N),
             block=blockDim,
             grid=gridDim,
         )
-        _host_out_arry = np.empty_like(self.data)
-        cuda.memcpy_dtoh(_host_out_arry, out_data)
-        cuda.Context.synchronize()
-        return _host_out_arry
+
+        ret = Tensor(ret)
+        ret._dtype = self.dtype
+        ret._shape = self.shape
+        return ret
 
     def __add__(self, tensor):
         return self.add(tensor)
 
     def __mul__(self, tensor):
         return self.mul(tensor)
+
+    def __substract__(self, tensor):
+        return self.sub(tensor)
 
     def __repr__(self):
         return "dp.Tensor shape: %s, numpy: (%s, dtype=%s), cuda device: %s " % (

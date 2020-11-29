@@ -24,7 +24,7 @@ def _helper_test(shps, lmts, np_fxn, deepops_fxn, atol=1e-6, rtol=1e-6):
         timeit.Timer(functools.partial(deepops_fxn, *dp_tensors)).timeit(5) * 1000 / 5
     )
     np_fp = timeit.Timer(functools.partial(np_fxn, *numpy_array)).timeit(5) * 1000 / 5
-    out = deepops_fxn(*dp_tensors)
+    out = deepops_fxn(*dp_tensors).cpu().data
     np_out = np_fxn(*numpy_array)
 
     np.testing.assert_allclose(out, np_out, atol=atol, rtol=rtol)
@@ -41,7 +41,7 @@ class TestDeviceTransfers(unittest.TestCase):
         tensor = dp.Tensor(a)
         tensor.device("gpu")
         # TODO (we can do it better here.)
-        self.assertIsNotNone(tensor.device_data)
+        self.assertIsNotNone(tensor.data)
 
     @pytest.mark.skip
     def test_multidevice_op(self):
