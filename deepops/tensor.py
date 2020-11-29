@@ -83,6 +83,7 @@ class GradientMixin:
             out_node: Leaf Output Node.
         """
         gradient = self._walk(self, 1)
+        self.grad = gradient
         return gradient
 
 
@@ -99,9 +100,9 @@ class Tensor(GPUConnectMixin, GradientMixin):
     It involves the usage of __slots__ to tell Python not to use a dict,
     and only allocate space for a fixed set of attributes.
     """
-    __slots__ = ("_data", "_dtype", "_shape", "gpu", "state", "device_name")
+    __slots__ = ("_data", "_name", "_dtype", "_shape", "gpu", "state", "device_name")
 
-    def __init__(self, data, dtype=None):
+    def __init__(self, data, name=None, dtype=None):
         """__init__.
         Initializes Tensor Class.
 
@@ -127,6 +128,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
         self._data = data
         self._dtype = data.dtype
         self._shape = data.shape
+        self._name = name
         self.gpu = False
         self.grad = 0.0
         self._child_nodes = tuple()
@@ -149,6 +151,10 @@ class Tensor(GPUConnectMixin, GradientMixin):
     @property
     def shape(self):
         return self._shape
+
+    @property
+    def name(self):
+        return self._name
 
     @property
     def data(self):
