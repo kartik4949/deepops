@@ -1,5 +1,6 @@
 """Tensor Class."""
 import functools
+import operator
 
 import numpy as np
 
@@ -10,6 +11,9 @@ from pycuda.compiler import SourceModule
 
 from .gpu_kernels import add, arithmetic
 from .states import TensorState
+
+
+ops = {"+": operator.add, "-": operator.sub, "*": operator.mul, "/": operator.truediv}
 
 
 class GPUConnectMixin:
@@ -55,7 +59,35 @@ class GPUConnectMixin:
         return kernel.get_function(function)
 
 
-class Tensor(GPUConnectMixin):
+class GradientMixin:
+    def _walk(self, leaf_out_node, in_grad):
+        """_walk.
+        Reverse Graph Traversal with gradients.
+
+        Args:
+            leaf_out_node: Leaf Node.
+            in_grad: Input Gradient.
+        """
+        _child_nodes = leaf_out_node._child_nodes
+        _in_grads = leaf_out_node._backward(in_grad)
+        _ = [
+            self._walk(node, in_grad) for node, in_grad in zip(_child_nodes, _in_grads)
+        ]
+        return in_grad
+
+    def backward(self):
+        """backward.
+        Backward Function with Input Gradient set 1.
+
+        Args:
+            out_node: Leaf Output Node.
+        """
+        gradient = self._walk(self, 1)
+        self.grad = gradient
+        return gradient
+
+
+class Tensor(GPUConnectMixin, GradientMixin):
     """Tensor Class."""
 
     BLOCKSIZE = 256
@@ -68,9 +100,9 @@ class Tensor(GPUConnectMixin):
     It involves the usage of __slots__ to tell Python not to use a dict,
     and only allocate space for a fixed set of attributes.
     """
-    __slots__ = ("_data", "_dtype", "_shape", "gpu", "state", "device_name")
+    __slots__ = ("_data", "_name", "_dtype", "_shape", "gpu", "state", "device_name")
 
-    def __init__(self, data, dtype=None):
+    def __init__(self, data, name=None, dtype=None):
         """__init__.
         Initializes Tensor Class.
 
@@ -87,16 +119,25 @@ class Tensor(GPUConnectMixin):
         (dp.Tensor, shape=(2,), dtype = int32, numpy:([3,5], dtype = int32)
         """
         self.state = TensorState.HOST
-        if isinstance(data, list):
+        if isinstance(data, list) or isinstance(data, float):
             data = np.array(data, dtype=dtype if dtype else np.float32)
         elif isinstance(data, pycuda._driver.DeviceAllocation):
             self.state = TensorState.DEVICE
-        elif not isinstance(data, np.ndarray):
+        elif not (isinstance(data, np.ndarray) or isinstance(data, np.float32)):
             raise TypeError(f"numpy excepted but {type(data)} passed.")
         self._data = data
         self._dtype = data.dtype
         self._shape = data.shape
+        self._name = name
         self.gpu = False
+        self.grad = 0.0
+        self._child_nodes = tuple()
+
+        def _backward(in_grad=1):
+            self.grad = in_grad
+            return (in_grad,)
+
+        self._backward = _backward
         self.device_name = "cpu:0"
 
     def detach(self):
@@ -110,6 +151,10 @@ class Tensor(GPUConnectMixin):
     @property
     def shape(self):
         return self._shape
+
+    @property
+    def name(self):
+        return self._name
 
     @property
     def data(self):
@@ -182,7 +227,15 @@ class Tensor(GPUConnectMixin):
         Args:
             tensor: Tensor class
         """
-        return self.arithmetic(tensor, "+")
+
+        def _backward(in_grad):
+            self_grad = in_grad
+            tensor_grad = in_grad
+            self.grad = self_grad
+            tensor.grad = tensor.grad
+            return self_grad, tensor_grad
+
+        return self.arithmetic(tensor, _backward, "+")
 
     def sub(self, tensor):
         """sub.
@@ -191,7 +244,15 @@ class Tensor(GPUConnectMixin):
         Args:
             tensor: Tensor class
         """
-        return self.arithmetic(tensor, "-")
+
+        def _backward(in_grad):
+            self_grad = in_grad
+            tensor_grad = -in_grad
+            self.grad = self_grad
+            tensor.grad = tensor.grad
+            return self_grad, tensor_grad
+
+        return self.arithmetic(tensor, _backward, "-")
 
     def mul(self, tensor):
         """mul.
@@ -200,9 +261,17 @@ class Tensor(GPUConnectMixin):
         Args:
             tensor: Tensor class
         """
-        return self.arithmetic(tensor, "*")
 
-    def arithmetic(self, tensor, operation: str = "+"):
+        def _backward(in_grad):
+            self_grad = in_grad * tensor.data
+            tensor_grad = in_grad * self.data
+            self.grad = self_grad
+            tensor.grad = tensor_grad
+            return self_grad, tensor_grad
+
+        return self.arithmetic(tensor, _backward, "*")
+
+    def arithmetic(self, tensor, backward=None, operation: str = "+"):
         """Arithmetic.
         Vector arithmetic operations on given Tensor.
 
@@ -210,7 +279,11 @@ class Tensor(GPUConnectMixin):
             tensor: Tensor class
         """
         if self.state != TensorState.DEVICE:
-            return self.data * tensor.data
+            ret = Tensor(ops[operation](self.data, tensor.data))
+            ret._child_nodes = (self, tensor)
+            if backward:
+                ret._backward = backward
+            return ret
         assert isinstance(
             tensor, self.__class__
         ), f"Tensor is required but passed {type(tensor)}"

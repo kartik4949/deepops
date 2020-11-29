@@ -5,6 +5,7 @@ import logging
 import timeit
 
 import numpy as np
+import tensorflow as tf
 import pytest
 
 import deepops as dp
@@ -29,10 +30,30 @@ def _helper_test(shps, lmts, np_fxn, deepops_fxn, atol=1e-6, rtol=1e-6):
 
     np.testing.assert_allclose(out, np_out, atol=atol, rtol=rtol)
 
-    print(
-        "\nTesting the speed || DeepOps %s function, took %.2f ms and Numpy took %.2f ms"
-        % (deepops_fxn.__name__, deepop_fp, np_fp),
+    logging.info(
+        "\nTesting the speed || DeepOps %s function, took %.2f ms and Numpy took %.2f ms",
+        (deepops_fxn.__name__, deepop_fp, np_fp),
     )
+
+
+def _helper_test_backward(shps, lmts, tf_fxn, deepops_fxn, atol=1e-6, rtol=1e-6):
+    # random tensor
+    tf.random.set_seed(111)
+    tf_arrays = [
+        tf.Variable(tf.random.uniform(s, l[0], l[-1], dtype=tf.float32))
+        for s, l in zip(shps, lmts)
+    ]
+    dp_tensors = [dp.Tensor(na.numpy()) for na in tf_arrays]
+
+    out = deepops_fxn(*dp_tensors)
+    out.backward()
+    with tf.GradientTape() as gt:
+        out_tf = tf_fxn(*tf_arrays)
+    out_tf = gt.gradient(out_tf, tf_arrays)
+    for dp_tensor, tf_grad in zip(dp_tensors, out_tf):
+        np.testing.assert_allclose(
+            dp_tensor.grad, tf_grad.numpy(), atol=atol, rtol=rtol
+        )
 
 
 class TestDeviceTransfers(unittest.TestCase):
@@ -54,7 +75,7 @@ class TestDeviceTransfers(unittest.TestCase):
         # TODO (test different gpu stuff)
 
 
-class TestOps(unittest.TestCase):
+class TestOpsForward(unittest.TestCase):
     def test_add(self):
         _helper_test(
             [(1, 1000000), (1, 1000000)],
@@ -69,6 +90,24 @@ class TestOps(unittest.TestCase):
             [(1, 1000000), (1, 1000000)],
             [(-1, 1), (-1, 1)],
             np_mul,
+            dp.Tensor.mul,
+        )
+
+
+class TestOpsBackward(unittest.TestCase):
+    def test_add_backward(self):
+        _helper_test_backward(
+            [(1, 1000000), (1, 1000000)],
+            [(-1, 1), (-1, 1)],
+            tf.add,
+            dp.Tensor.add,
+        )
+
+    def test_mul_backward(self):
+        _helper_test_backward(
+            [(1, 1000000), (1, 1000000)],
+            [(-1, 1), (-1, 1)],
+            tf.multiply,
             dp.Tensor.mul,
         )
 
