@@ -13,7 +13,7 @@ Note: Only for Educational Usage.
 
 # Installation.
 ```
-pip install deepops
+pip install deepop
 ```
 
 # Tensor.
