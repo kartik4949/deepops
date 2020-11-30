@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="deepop",
-    version="0.1dev2",
+    version="0.1dev",
     author="Kartik Sharma",
     author_email="kartik4949@gmail.com",
     description="A mini Tensor framework for tensor operations on GPU.",
