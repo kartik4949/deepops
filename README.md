@@ -15,6 +15,24 @@ Note: Only for Educational Usage.
 ```
 pip install deepop
 ```
+# Neural Network
+
+```
+import deepops as dp
+from deepops.model import Model
+
+
+class SeqFC(Model):
+    def __init__(self):
+        super().__init__()
+        self.dense1 = dp.layers.Dense(2, 2, activation="relu", name="dense1")
+        self.dense2 = dp.layers.Dense(2, 1, name="dense2")
+
+    def forward(self, x):
+        x = self.dense1(x)
+        x = self.dense2(x)
+        return x
+```
 
 # Tensor.
 ```
