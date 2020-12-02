@@ -5,11 +5,19 @@ import operator
 import numpy as np
 
 # PyCUDA initialization
+
 import pycuda.driver as cuda
+import pycuda
+
+"""
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
+"""
+
+"""
 
 from .gpu_kernels import add, arithmetic
+"""
 from .states import TensorState
 
 
@@ -100,7 +108,19 @@ class Tensor(GPUConnectMixin, GradientMixin):
     It involves the usage of __slots__ to tell Python not to use a dict,
     and only allocate space for a fixed set of attributes.
     """
-    __slots__ = ("_data", "_name", "_dtype", "_shape", "gpu", "state", "device_name")
+    """
+
+    __slots__ = (
+        "_data",
+        "_name",
+        "_n",
+        "_dtype",
+        "_shape",
+        "gpu",
+        "state",
+        "device_name",
+    )
+    """
 
     def __init__(self, data, name=None, dtype=None):
         """__init__.
@@ -119,7 +139,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
         (dp.Tensor, shape=(2,), dtype = int32, numpy:([3,5], dtype = int32)
         """
         self.state = TensorState.HOST
-        if isinstance(data, list) or isinstance(data, float):
+        if isinstance(data, (list, float, int)):
             data = np.array(data, dtype=dtype if dtype else np.float32)
         elif isinstance(data, pycuda._driver.DeviceAllocation):
             self.state = TensorState.DEVICE
@@ -133,7 +153,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
         self.grad = 0.0
         self._child_nodes = tuple()
 
-        def _backward(in_grad=1):
+        def _backward(in_grad=0.0):
             self.grad = in_grad
             return (in_grad,)
 
@@ -146,7 +166,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
         """
         self.state = TensorState.DETACH
         # TODO(kartik4949) : Write ME.
-        return Tensor(self.data)
+        return Tensor(self._data)
 
     @property
     def shape(self):
@@ -203,9 +223,9 @@ class Tensor(GPUConnectMixin, GradientMixin):
             self.state = TensorState.DEVICE
             self.device_name = name
             data = self._alloc_device_memory(self.shape)
-            self._memory_host_to_device(data, self.data)
-            self._shape = self.data.shape
-            self._dtype = self.data.dtype
+            self._memory_host_to_device(data, self._data)
+            self._shape = self._data.shape
+            self._dtype = self._data.dtype
             self._data = data
         return self
 
@@ -220,6 +240,40 @@ class Tensor(GPUConnectMixin, GradientMixin):
         cuda.Context.synchronize()
         return Tensor(_host_out_arry)
 
+    def sigmoid(self):
+        """Sigmoid function."""
+        sig = 1 / (1 + np.exp(-self._data))
+        ret = Tensor(sig)
+        ret._child_nodes = (self,)
+
+        def _backward(in_grad):
+            out_grad = in_grad * (ret._data * (1 - ret._data))
+            return (out_grad,)
+
+        ret._backward = _backward
+
+        return ret
+
+    def relu(self):
+        """Relu function."""
+        out = Tensor(0.0 if self._data < 0 else self._data)
+        out._child_nodes = (self,)
+
+        def _backward(in_grad):
+            self.grad = (out._data > 0) * in_grad
+            return (self.grad,)
+
+        out._backward = _backward
+        return out
+
+    def tanh(self):
+        """Tanh Function."""
+        t2 = Tensor(
+            np.zeros(self.shape, dtype=self.data.dtype) + 2,
+        )
+        t1 = Tensor(np.zeros(self.shape, dtype=self.data.dtype))
+        return self.mul(t2).sigmoid().mul(t2) - t1  # 2*sigmoid(2*x)-1
+
     def add(self, tensor):
         """add.
         Vector Addition which adds Tensor with given Tensor.
@@ -229,11 +283,9 @@ class Tensor(GPUConnectMixin, GradientMixin):
         """
 
         def _backward(in_grad):
-            self_grad = in_grad
-            tensor_grad = in_grad
-            self.grad = self_grad
-            tensor.grad = tensor.grad
-            return self_grad, tensor_grad
+            self.grad = in_grad
+            tensor.grad = in_grad
+            return in_grad, in_grad
 
         return self.arithmetic(tensor, _backward, "+")
 
@@ -246,11 +298,9 @@ class Tensor(GPUConnectMixin, GradientMixin):
         """
 
         def _backward(in_grad):
-            self_grad = in_grad
-            tensor_grad = -in_grad
-            self.grad = self_grad
-            tensor.grad = tensor.grad
-            return self_grad, tensor_grad
+            self.grad = in_grad
+            tensor.grad = -in_grad
+            return in_grad, -in_grad
 
         return self.arithmetic(tensor, _backward, "-")
 
@@ -264,7 +314,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
 
         def _backward(in_grad):
             self_grad = in_grad * tensor.data
-            tensor_grad = in_grad * self.data
+            tensor_grad = in_grad * self._data
             self.grad = self_grad
             tensor.grad = tensor_grad
             return self_grad, tensor_grad
@@ -279,7 +329,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
             tensor: Tensor class
         """
         if self.state != TensorState.DEVICE:
-            ret = Tensor(ops[operation](self.data, tensor.data))
+            ret = Tensor(ops[operation](self._data, tensor.data))
             ret._child_nodes = (self, tensor)
             if backward:
                 ret._backward = backward
@@ -294,7 +344,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
         _vec_kernel = self.get_kernel(arithmetic(operation), "device_arithmetic")
         _vec_kernel(
             ret,
-            self.data,
+            self._data,
             tensor.data,
             np.int32(N),
             block=blockDim,
@@ -306,20 +356,50 @@ class Tensor(GPUConnectMixin, GradientMixin):
         ret._shape = self.shape
         return ret
 
+    def __pow__(self, value):
+        out = Tensor(self.data ** value)
+        out._child_nodes = (self,)
+
+        def _backward(in_grad):
+            self.grad = (value * self._data ** (value - 1)) * in_grad
+            return (self.grad,)
+
+        out._backward = _backward
+        return out
+
     def __add__(self, tensor):
+        tensor = tensor if isinstance(tensor, Tensor) else Tensor(tensor)
         return self.add(tensor)
+
+    def __radd__(self, tensor):
+        return self + tensor
 
     def __mul__(self, tensor):
         return self.mul(tensor)
 
-    def __substract__(self, tensor):
+    def __sub__(self, tensor):
         return self.sub(tensor)
+
+    def __neg__(self):
+        return self * -1
+
+    def __rsub__(self, tensor):
+        return tensor + (-self)
+
+    def __rmul__(self, tensor):
+        return self * tensor
+
+    def __truediv__(self, value):
+        return self * value ** -1
+
+    def __rtruediv__(self, vale):
+        return value * self ** -1
 
     def __repr__(self):
         return "dp.Tensor %s shape: %s, numpy: (%s, dtype=%s), cuda device: %s" % (
             f"name: {self.name}, " if self.name else "",
             self.shape,
-            self.data,
+            self._data,
             self.dtype,
             self.where,
         )
