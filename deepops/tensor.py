@@ -9,15 +9,11 @@ import numpy as np
 import pycuda.driver as cuda
 import pycuda
 
-"""
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
-"""
 
-"""
 
 from .gpu_kernels import add, arithmetic
-"""
 from .states import TensorState
 
 
