@@ -33,6 +33,15 @@ class SeqFC(Model):
         x = self.dense2(x)
         return x
 ```
+# Backward Pass.
+```
+sequential = SeqFC()
+sequential.forward(x)
+sequential.init_backward()
+sequential.backward()
+
+print([p.grad for p in sequential.parameters()])
+```
 
 # Tensor.
 ```
