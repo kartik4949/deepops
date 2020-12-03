@@ -7,7 +7,6 @@ import numpy as np
 # PyCUDA initialization
 
 import pycuda.driver as cuda
-import pycuda
 
 
 import pycuda.autoinit
@@ -247,8 +246,8 @@ class Tensor(GPUConnectMixin, GradientMixin):
         ret._child_nodes = (self,)
 
         def _backward(in_grad):
-            out_grad += in_grad * (ret._data * (1 - ret._data))
-            return (out_grad,)
+            self.grad += in_grad * (ret._data * (1 - ret._data))
+            return self.grad
 
         ret._backward = _backward
 
@@ -256,7 +255,8 @@ class Tensor(GPUConnectMixin, GradientMixin):
 
     def relu(self):
         """Relu function."""
-        out = Tensor(0.0 if self._data < 0 else self._data)
+        _data = np.maximum(self._data, 0)
+        out = Tensor(_data)
         out._child_nodes = (self,)
 
         def _backward(in_grad):
@@ -396,7 +396,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
         return value * self ** -1
 
     def __repr__(self):
-        return "dp.Tensor %s shape: %s, numpy: (%s, dtype=%s), cuda device: %s" % (
+        return "Tensor( %s shape: %s, numpy: (%s, dtype=%s), device: %s)" % (
             f"name: {self.name}, " if self.name else "",
             self.shape,
             self._data,
