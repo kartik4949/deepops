@@ -9,6 +9,7 @@ import numpy as np
 import pycuda.driver as cuda
 import pycuda
 
+
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
 
@@ -64,7 +65,9 @@ class GPUConnectMixin:
 
 
 class GradientMixin:
-    def _walk(self, leaf_out_node, in_grad):
+    """ Gradient Mixin class with grad tools. """
+
+    def _walk(self, leaf_out_node):
         """_walk.
         Reverse Graph Traversal with gradients.
 
@@ -72,12 +75,11 @@ class GradientMixin:
             leaf_out_node: Leaf Node.
             in_grad: Input Gradient.
         """
+        self.visited.add(leaf_out_node)
         _child_nodes = leaf_out_node._child_nodes
-        _in_grads = leaf_out_node._backward(in_grad)
-        _ = [
-            self._walk(node, in_grad) for node, in_grad in zip(_child_nodes, _in_grads)
-        ]
-        return in_grad
+        _ = [self._walk(node) for node in _child_nodes if node not in self.visited]
+        self.nodes.append(leaf_out_node)
+        return
 
     def backward(self):
         """backward.
@@ -86,9 +88,13 @@ class GradientMixin:
         Args:
             out_node: Leaf Output Node.
         """
-        gradient = self._walk(self, 1)
-        self.grad = gradient
-        return gradient
+        self.visited = set()
+        self.nodes = []
+        self._walk(self)
+        self.grad = 1.0
+        for node in reversed(self.nodes):
+            node._backward(node.grad)
+        return self.grad
 
 
 class Tensor(GPUConnectMixin, GradientMixin):
@@ -104,7 +110,6 @@ class Tensor(GPUConnectMixin, GradientMixin):
     It involves the usage of __slots__ to tell Python not to use a dict,
     and only allocate space for a fixed set of attributes.
     """
-    """
 
     __slots__ = (
         "_data",
@@ -116,7 +121,6 @@ class Tensor(GPUConnectMixin, GradientMixin):
         "state",
         "device_name",
     )
-    """
 
     def __init__(self, data, name=None, dtype=None):
         """__init__.
@@ -243,7 +247,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
         ret._child_nodes = (self,)
 
         def _backward(in_grad):
-            out_grad = in_grad * (ret._data * (1 - ret._data))
+            out_grad += in_grad * (ret._data * (1 - ret._data))
             return (out_grad,)
 
         ret._backward = _backward
@@ -256,7 +260,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
         out._child_nodes = (self,)
 
         def _backward(in_grad):
-            self.grad = (out._data > 0) * in_grad
+            self.grad += (out._data > 0) * in_grad
             return (self.grad,)
 
         out._backward = _backward
@@ -279,8 +283,8 @@ class Tensor(GPUConnectMixin, GradientMixin):
         """
 
         def _backward(in_grad):
-            self.grad = in_grad
-            tensor.grad = in_grad
+            self.grad += in_grad
+            tensor.grad += in_grad
             return in_grad, in_grad
 
         return self.arithmetic(tensor, _backward, "+")
@@ -294,8 +298,8 @@ class Tensor(GPUConnectMixin, GradientMixin):
         """
 
         def _backward(in_grad):
-            self.grad = in_grad
-            tensor.grad = -in_grad
+            self.grad += in_grad
+            tensor.grad += -in_grad
             return in_grad, -in_grad
 
         return self.arithmetic(tensor, _backward, "-")
@@ -309,10 +313,10 @@ class Tensor(GPUConnectMixin, GradientMixin):
         """
 
         def _backward(in_grad):
-            self_grad = in_grad * tensor.data
+            self_grad = in_grad * tensor._data
             tensor_grad = in_grad * self._data
-            self.grad = self_grad
-            tensor.grad = tensor_grad
+            self.grad += self_grad
+            tensor.grad += tensor_grad
             return self_grad, tensor_grad
 
         return self.arithmetic(tensor, _backward, "*")
@@ -357,7 +361,7 @@ class Tensor(GPUConnectMixin, GradientMixin):
         out._child_nodes = (self,)
 
         def _backward(in_grad):
-            self.grad = (value * self._data ** (value - 1)) * in_grad
+            self.grad += (value * self._data ** (value - 1)) * in_grad
             return (self.grad,)
 
         out._backward = _backward
