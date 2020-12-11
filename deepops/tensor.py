@@ -75,8 +75,9 @@ class GradientMixin:
             in_grad: Input Gradient.
         """
         self.visited.add(leaf_out_node)
-        _child_nodes = leaf_out_node._child_nodes
-        _ = [self._walk(node) for node in _child_nodes if node not in self.visited]
+        for node in leaf_out_node._child_nodes:
+            if node not in self.visited:
+                self._walk(node)
         self.nodes.append(leaf_out_node)
         return
 
