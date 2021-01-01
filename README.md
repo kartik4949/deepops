@@ -48,7 +48,7 @@ print([p.grad for p in sequential.parameters()])
 a = Tensor([1,2,3,4,5])
 # deepop tensor 
 ```
-# Attach to a cuda device.
+# Attach.
 ```
 a = Tensor([1,2,3,4,5])
 a.device("gpu:0") # attach to gpu device.
